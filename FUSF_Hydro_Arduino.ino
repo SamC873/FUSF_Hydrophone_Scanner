@@ -31,6 +31,10 @@ int MaxxSpeed = 800;
 int MaxzSpeed = 700;
 int MaxySpeed = 700;
 
+int xlim = 511; //mm
+int ylim = 68;
+int zlim = 170;
+
 int Accel = 6000;
 
 uint8_t EnablePin = 8;
@@ -85,9 +89,9 @@ void setup() {
 
   digitalWrite(EnablePin, HIGH);
 
-  pinMode(LimX, INPUT);  // x limit switch
-  pinMode(LimY, INPUT); // y limit switch
-  pinMode(LimZ, INPUT); // z limit switch
+  pinMode(LimX, INPUT_PULLUP);  // x limit switch
+  pinMode(LimY, INPUT_PULLUP); // y limit switch
+  pinMode(LimZ, INPUT_PULLUP); // z limit switch
 
   
  /*
@@ -110,12 +114,22 @@ digitalWrite(EnablePin, LOW);  //motors on
 
 int i = 0;
 bool stopped = false;
+int ti = 0;
 // String commandin;
 int steps;
 //String response;
 
 void loop() {
-
+/*if (digitalRead(LimX) || digitalRead(LimY) || digitalRead(LimZ) == 0){
+    Serial.print(String(analogRead(LimX)));
+    Serial.print('\n');
+    Serial.print(String(analogRead(LimY)));
+    Serial.print('\n');
+    Serial.print(String(analogRead(LimZ)));
+    Serial.print('\n');
+    Serial.print("-");
+    Serial.print('\n');
+    }*/
     getDataFromPC();
     checklimits();
     select_movement();
@@ -127,78 +141,98 @@ void loop() {
 //===========================================
 
 void movex()
-    
 {
-  if (!stopped) {
+//Serial.print(bool(stopped));
+  //if (!stopped) {
+    
   if (strcmp(direct, "-") == 0) {
-    x_axis.move(steps); //negative direction switched in keep with tank coordinates
+    x_axis.move(steps*1); //negative direction switched in keep with tank coordinates
+   // Serial.print("u moved in -x");
   }
   else {
-    x_axis.move(steps*-1);
+    x_axis.move(steps*-1); //Note .move() sets the target position relative to current position
   }
   
   bool moved = true;
   while (digitalRead(LimX) != LOW && moved) {   
-        moved = x_axis.run();  //returns true if it moved a step
+        moved = x_axis.run(); //Note .run() returns true if motor is still running to target position
+        //Serial.print(moved);
   }
-    if (digitalRead(LimX) == LOW) {
+    if (digitalRead(LimX) == LOW) { // x limit switch hit
       int last;
-      if (strcmp(direct, "-") == 0) {
-        last = -1;
+      if (strcmp(direct, "-") == 0) { // -x limit switch hit
+        last = -1; // step in + direction
+        Serial.print("-x reached");
       }
       else {
-        last = 1;
+        last = 1; // +x limit switch hit so step in - direction
       }
-      x_axis.move(last * 200);
       moved = true;
-      while (moved) {
-         moved = x_axis.run();
-      }  
-    }
+              ti = 0;
+              while (digitalRead(LimX) == LOW || moved) {
+                 ti = ti + 1;
+                Serial.print(ti);
+                x_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = x_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      
+      stopped = false;
+  //  }
   }
 } //movex end
 
 //=================
 
 void movey()
+//Last update 7/6/21
 {
-  if (!stopped) {
-    if (strcmp(direct, "-") == 0) {
-    y_axis.move(steps); //The negative direction is switched in keep with tank coordinates 
-    }
+  //Serial.print(bool(stopped));
+  //if (!stopped) {
+    
+  if (strcmp(direct, "-") == 0) {
+    y_axis.move(steps*-1); //negative direction for tank coordinates
+   // Serial.print("u moved in -y");
+  }
   else {
-    y_axis.move(steps*-1);
+    y_axis.move(steps*1); //Note .move() sets the target position relative to current position
   }
   
   bool moved = true;
   while (digitalRead(LimY) != LOW && moved) {   
         moved = y_axis.run();  //returns true if it moved a step
+        //Serial.print(moved);
   }
-    if (digitalRead(LimY) == LOW) {
+    if (digitalRead(LimY) == LOW) { // y limit switch hit
       int last;
-      if (strcmp(direct,"-") == 0) {
-        last = -1;
+      if (strcmp(direct, "-") == 0) { // -y limit switch hit
+        last = 1; // step in + direction
+       // Serial.print("-y reached");
       }
       else {
-        last = 1;
+        last = -1; // +y limit switch hit so step in - direction
       }
-      y_axis.move(last * 200);
       moved = true;
-      while (moved) {
-         moved = y_axis.run();
-      } 
-      }
-    }
+              while (digitalRead(LimY) == LOW || moved) {
+                y_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = y_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      
+      stopped = false;
+  //  }
+  }
   } //movey end
-  
-
 //=================
 
 void movez()
 {
-  if (!stopped) {
    if (strcmp(direct, "-") == 0) {
-    z_axis.move(steps*-1);
+    z_axis.move(steps*-1); //z axis has opposite of x and y if positive motion is away from motor
    }
   else {
     z_axis.move(steps);
@@ -216,65 +250,107 @@ void movez()
       else {
         last = -1;
       }
-      z_axis.move(last * 200);
-      moved = true;
-      while (moved) {
-         moved = z_axis.run();
-      } 
-    }
+   
+         moved = true;
+              while (digitalRead(LimZ) == LOW || moved) {
+                z_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = z_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      stopped = false;    
   }
-}
+}//movez end
 
 //==========================================
 
 void HomeMotors()
 {
-    digitalWrite(EnablePin, LOW);
-    x_axis.move(100000);  //
-    y_axis.move(10000);
-    z_axis.move(-1000000);
+  digitalWrite(EnablePin, LOW);
+  // center x
+    x_axis.move(10000000);    
+    bool moved = true;  
+      while (digitalRead(LimX) == HIGH && moved){
+        moved = x_axis.run();
+      }
+      if (digitalRead(LimX) == LOW) {
+        moved = true;
+              while (digitalRead(LimX) == LOW || moved) {
+                 
+                x_axis.move(-25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = x_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+        stopped = true;
+        moved = true;
+                while (moved) {
+                x_axis.move(-xlim/2*100); //moves to center of tank
+                moved = true;
+                stopped = false;
+                while (moved) {
+                    moved = x_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      } //end while loop which moved to center of tank
 
-    x_axis.run();
-    y_axis.run();
-    z_axis.run(); 
-    
-    
-    bool xbool = true;
-    bool ybool = true;
-    bool zbool = true;
-    do {      
-          x_axis.run();
-          y_axis.run();
-          z_axis.run();
-     
-         if (digitalRead(LimX) == LOW) {
-            xbool = false;
-            x_axis.stop();  // Stop as fast as possible: sets new target         
-         }
-         if (digitalRead(LimY) == LOW) {
-            ybool = false;
-            y_axis.stop();  // Stop as fast as possible: sets new target
-         }
-         if (digitalRead(LimZ) == LOW) {
-            zbool = false;
-            z_axis.stop();  // Stop as fast as possible: sets new target      
-         } 
-    }
-         while ((xbool || ybool) || zbool); 
-         
-            //step off limit switch
-            x_axis.move(-500);
-            y_axis.move(-500);
-            z_axis.move(500);
-            x_axis.runToPosition();
-            y_axis.runToPosition();
-            z_axis.runToPosition();
-         
+   //center y
+    y_axis.move(-100000);    
+    moved = true;  
+      while (digitalRead(LimY) == HIGH && moved){
+        moved = y_axis.run();
+      }
+      if (digitalRead(LimY) == LOW) {
+        moved = true;
+              while (digitalRead(LimY) == LOW || moved) {
+                y_axis.move(25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = y_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+        stopped = true;
+        moved = true;
+                while (moved) {
+                y_axis.move(ylim/2*100); //moves to center of tank
+                moved = true;
+                stopped = false;
+                while (moved) {
+                    moved = y_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      } //end while loop which moved to center of tank
 
-       //  digitalWrite(EnablePin, HIGH);
-       
-}
-  
+    //center z
+    z_axis.move(-1000000);    
+    moved = true;  
+      while (digitalRead(LimZ) == HIGH && moved){
+        moved = z_axis.run();
+      }
+      if (digitalRead(LimZ) == LOW) {
+        moved = true;
+              while (digitalRead(LimZ) == LOW || moved) {
+                z_axis.move(25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = z_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+        stopped = true;
+        moved = true;
+                while (moved) {
+                z_axis.move(zlim/2*100); //moves to center of tank, note no negative due to signs along z axis
+                moved = true;
+                stopped = false;
+                while (moved) {
+                    moved = z_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      } //end while loop which moved to center of tank    
+}//end HomeMotors()
+ 
 
 //==============================
 
@@ -282,14 +358,72 @@ void checklimits() {
    if (digitalRead(LimX) == LOW) // It's pushing on the x limit switch
            {
               stopped = true;
-      }
+              Serial.print("\nX Limit Pushed");
+              // x limit switch hit
+              int last;
+              if (strcmp(direct, "-") == 0) { // -x limit switch hit
+                  last = -1; // step in + direction
+              }
+              else {
+              last = 1; // +x limit switch hit so step in - direction
+              }
+              bool moved = true;
+              ti = 0;
+              while (digitalRead(LimX) == LOW || moved) {
+                ti = ti + 1;
+                Serial.print(ti);
+                x_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = x_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      
+      stopped = false;
+           }
    else if (digitalRead(LimY) == LOW) // It's pushing on the y limit switch
   {
     stopped = true;
+    Serial.print("\nY Limit Pushed");
+              int last;
+              if (strcmp(direct, "-") == 0) { // -y limit switch hit
+                  last = 1; // step in + direction
+              }
+              else {
+              last = -1; // +y limit switch hit so step in - direction
+              }
+              bool moved = true;
+              while (digitalRead(LimY) == LOW || moved) {
+                y_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = y_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      
+      stopped = false;
   }
   else if (digitalRead(LimZ) == LOW) // it's pushing on the z limit switch
   {
     stopped = true;
+    Serial.print("\nZ Limit Pushed");
+              int last;
+              if (strcmp(direct, "-") == 0) { // -z limit switch hit
+                  last = 1; // step in + direction
+              }
+              else {
+              last = -1; // +z limit switch hit so step in - direction; NA in current system so need to watch bottom of tank
+              }
+              bool moved = true;
+              while (digitalRead(LimZ) == LOW || moved) {
+                z_axis.move(last * 25); //moves off limit switch in opposing direction in 250 um increments
+                moved = true;
+                while (moved) {
+                    moved = z_axis.run(); //Note .run() returns true if motor is still running to target position
+                  }  
+                }
+      
+      stopped = false;
   }
   else {
     stopped = false;
@@ -355,13 +489,18 @@ void replyToPC() {
 
   if (newDataFromPC) {
     newDataFromPC = false;
-   
-    Serial.print(axis);
-    Serial.print(direct);
-    Serial.print(steps);
-    Serial.println("\n");
-
+ // if (digitalRead(LimX) == HIGH && digitalRead(LimY) == HIGH && digitalRead(LimZ) == HIGH){
+      Serial.print(axis);
+      Serial.print(direct);
+      Serial.print(steps);
+      Serial.println("\n");
   }
+  /* else { //A limit switch is activated requiring further instruction
+      Serial.print(direct);
+      Serial.print(axis);
+      Serial.print(" limit reached");
+   }*/
+  //}
 }
 
 //==================
